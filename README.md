@@ -8,6 +8,12 @@ cd NotificationGate
 docker compose up --build -d
 ```
 ```
+docker run -d --name elasticsearch -p 9200:9200 -p 9300:9300 -e "discovery.type=single-node" -e "xpack.security.enabled=false" elasticsearch:8.11.3
+```
+```
+docker run -d --name kibana -p 5601:5601 --link elasticsearch:elasticsearch -e "ELASTICSEARCH_HOSTS=http://elasticsearch:9200" kibana:8.11.3
+```
+```
 docker ps
 ```
 וודא שקפקא עלה
@@ -20,7 +26,13 @@ docker ps
 ```
 dotnet run
 ```
-יודפסו לך הנתיבים
-
 ההתראות נשלחות לקפקא!
+לצפייה בלוגים באלסטיק דרך קיבאנה
+```
+http://localhost:5601/app/dev_tools#/console
+```
+
+## פירוט המערכת
+### NotificationGate
+סורק את תיקיית הסימולטור בו נוצרים הקבצים החדשים, מזהה בעזרת ספריית FileSystemWatcher כאשר נוצר קובץ חדש, לאחר שקובץ הביטחון "redi" מוכן - קובץ הג'ייסון נקר ונשלח לקפקא, לוגים נשלחים לאלסטיקסרץ' במקביל.
 

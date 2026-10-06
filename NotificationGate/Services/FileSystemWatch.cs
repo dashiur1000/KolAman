@@ -2,12 +2,12 @@
 
 namespace NotificationGate.Services
 {
-    public class FileSystemWatche
+    public class FileSystemWatch
     {
         private readonly FileSystemWatcher _watcher;
         private readonly KafkaProducerService _kafkaProducer;
 
-        public FileSystemWatche(string directoryPath, KafkaProducerService kafkaProducer)
+        public FileSystemWatch(string directoryPath, KafkaProducerService kafkaProducer)
         {
             _kafkaProducer = kafkaProducer;
             if (!Directory.Exists(directoryPath))
@@ -26,22 +26,12 @@ namespace NotificationGate.Services
                              | NotifyFilters.Security
                              | NotifyFilters.Size,
                 IncludeSubdirectories = true,
-                EnableRaisingEvents = false
+                EnableRaisingEvents = true,
             };
-
             _watcher.Created += OnCreated;
             _watcher.InternalBufferSize = 65536;
-        }
-
-        public void Start()
-        {
-            if (!Directory.Exists(_watcher.Path))
-            {
-                Directory.CreateDirectory(_watcher.Path);
-            }
-
-            _watcher.EnableRaisingEvents = true;
             Console.WriteLine($"Watching directory: {_watcher.Path}");
+            Console.ReadLine();
         }
 
         private async void OnCreated(object sender, FileSystemEventArgs e)
@@ -59,12 +49,6 @@ namespace NotificationGate.Services
                     {
                         dataFilePath = basePath + ".json";
                     }
-                    //for (int i = 0; i < 10 && !File.Exists(dataFilePath); i++)
-                    //{
-                    //    await Task.Delay(500);
-                    //    if (File.Exists(basePath + ".json")) dataFilePath = basePath + ".json";
-                    //}
-
                     if (!string.IsNullOrEmpty(dataFilePath) && File.Exists(dataFilePath))
                     {
                         await ProcessAndSendAlertAsync(dataFilePath);
@@ -87,29 +71,9 @@ namespace NotificationGate.Services
             try
             {
                 string content = await File.ReadAllTextAsync(filePath);
-                string ext = Path.GetExtension(filePath).ToLower();
-                string jsonPayload = string.Empty;
-
-                if (ext == ".json")
+                if (!string.IsNullOrEmpty(content))
                 {
-                    jsonPayload = content;
-                }
-                else if (ext == ".txt")
-                {
-                    var alert = new Models.Alert
-                    {
-                        alert_id = Guid.NewGuid().ToString(),
-                        title = Path.GetFileNameWithoutExtension(filePath),
-                        content = content,
-                        timestamp = DateTime.UtcNow.ToString("o"),
-                        status = "new"
-                    };
-                    jsonPayload = JsonSerializer.Serialize(alert);
-                }
-
-                if (!string.IsNullOrEmpty(jsonPayload))
-                {
-                    await _kafkaProducer.SendAlertAsync(Guid.NewGuid().ToString(), jsonPayload);
+                    await _kafkaProducer.SendAlertAsync(Guid.NewGuid().ToString(), content);
                 }
             }
             catch (Exception ex)

@@ -25,12 +25,10 @@ namespace NotificationGate
             string logMessage2 = "Connect to Elastic";
             await elasticService.SendLogAsync(logMessage2, logLevel2);
 
-            var watcher = new FileSystemWatche(alertsPath, kafka);
-            watcher.Start();
-
+            var watcher = new FileSystemWatch(alertsPath, kafka);
             string logLevel3 = "Info";
             string logMessage3 = "Send to Kafka";
-            await elasticService.SendLogAsync(logMessage3, logLevel2);
+            await elasticService.SendLogAsync(logMessage3, logLevel3);
 
             Console.WriteLine("NotificationGate running.");
         }

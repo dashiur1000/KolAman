@@ -53,7 +53,7 @@ class RedisDuplicateChecker:
         exists_flag = self.client.get(alert_id)
         if exists_flag:
             return True
-        self.client.setex(alert_id, self.ttl, "processed")
+        self.client.set(alert_id, self.ttl, "processed")
         return False
 
 

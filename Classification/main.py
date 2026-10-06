@@ -1,14 +1,13 @@
 import json
 import logging
-from logging import root
 from os.path import exists
 from confluent_kafka import Consumer
-from shapely.geometry import Point, Polygon
+from shapely.geometry import Point
 import redis
 import pika
-from kafka import KafkaConsumer
 import geopandas as gpd
-import os
+from elasticsearch import Elasticsearch, helpers
+import configparser
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -23,22 +22,27 @@ KAFKA_GROUP_ID = "classification-service-group"
 
 RABBITMQ_HOST = "localhost"
 
-def get_region_with_geopandas(lon: float, lat: float) -> str:
-    # 1. טעינת קובץ ה-GeoJSON ל-GeoDataFrame
-    gdf = gpd.read_file("regions.geojson")
-    if gdf is not exists:
-        print(f"{gdf} is not exists")
+# ["elasticsearch"]
+# cloud_id = "discovery.type=single-node"
+# user = "pack.security.enabled=false"
+# password = "ES_JAVA_OPTS=-Xms512m -Xmx512m"
 
-    # 2. יצירת נקודה מתאימה
+def get_region_with_geopandas(lon: float, lat: float) -> str:
+    geojson_path = "regions.geojson"
+    if not exists(geojson_path):
+        logger.error(f"{geojson_path} does not exist")
+        return "OVERSEAS"
+
+    gdf = gpd.read_file(geojson_path)
+
     pt = Point(lon, lat)
 
-    # 3. סינון השורות שהפוליגון שלהן מכיל את הנקודה
     matched = gdf[gdf.geometry.contains(pt)]
 
-    # 4. החזרת שם האזור אם נמצאה התאמה, אחרת OVERSEAS
     if not matched.empty:
         return matched.iloc[0]["region"]
     return "OVERSEAS"
+
 
 class RedisDuplicateChecker:
     def __init__(self, host, port, ttl):
@@ -46,11 +50,12 @@ class RedisDuplicateChecker:
         self.ttl = ttl
 
     def is_duplicate(self, alert_id):
-        exists = self.client.get(alert_id)
-        if exists:
+        exists_flag = self.client.get(alert_id)
+        if exists_flag:
             return True
         self.client.setex(alert_id, self.ttl, "processed")
         return False
+
 
 class RabbitMQPublisher:
     def __init__(self, host):
@@ -58,14 +63,36 @@ class RabbitMQPublisher:
         self.channel = self.connection.channel()
         self.channel.exchange_declare(exchange="commands_exchange", exchange_type="direct")
 
+
     def publish(self, region, message):
         routing_key = f"region.{region}"
+
+        queue_name = f"queue_{region}"
+        self.channel.queue_declare(queue=queue_name, durable=True)
+        self.channel.queue_bind(exchange="commands_exchange", queue=queue_name, routing_key=routing_key)
+
         self.channel.basic_publish(
             exchange="commands_exchange",
             routing_key=routing_key,
             body=json.dumps(message)
         )
-        logger.info(f"Alert {message.get('id')} successfully sent to RabbitMQ for region: {region}")
+        logger.info(f"Alert successfully sent to RabbitMQ for region: {region}")
+
+    def close(self):
+        if self.connection and self.connection.is_open:
+            self.connection.close()
+
+
+# class Elasticsearch_Config:
+#
+#     config = configparser.ConfigParser()
+#
+#     def config_to_es(self):
+#         es = Elasticsearch(
+#             cloud_id=self.config['elasticsearch'][cloud_id],
+#             http_auth=(self.config['elasticsearch'][user], self.config['elasticsearch'][password])
+#         )
+#         print(es.info())
 
 class AlertValidator:
     def validate(alert_data):
@@ -73,35 +100,65 @@ class AlertValidator:
             return False
         if not alert_data.get("content") or not alert_data.get("title"):
             return False
-        if "lon" not in alert_data or "lat" not in alert_data:
+        # if alert_data["lon"] != float or alert_data["lat"] != float:
+        #     print(f"{alert_data["lon"]}")
+        #     return False
+        if "alert_id" not in alert_data and "id" not in alert_data:
             return False
         return True
+
 
 def main():
     redis_checker = RedisDuplicateChecker(REDIS_HOST, REDIS_PORT, REDIS_TTL_SECONDS)
     rabbit_publisher = RabbitMQPublisher(RABBITMQ_HOST)
+    # elasticsearch_config = Elasticsearch_Config()
 
-    config= {
-            'bootstrap.servers': "localhost:9092",
-            'group.id': "classification-service-group",
-            'auto.offset.reset': 'earliest'
+
+    config = {
+        'bootstrap.servers': KAFKA_BOOTSTRAP_SERVERS[0],
+        'group.id': KAFKA_GROUP_ID,
+        'auto.offset.reset': 'earliest'
     }
+
     consumer = Consumer(config)
+    consumer.subscribe([KAFKA_TOPIC])
+
+    logger.info("Starting classification service...")
     try:
-        for message in consumer:
-            alert_data = message.value
+        while True:
+            msg = consumer.poll(1.0)
+            if msg is None:
+                continue
+            if msg.error():
+                logger.error(f"Consumer error: {msg.error()}")
+                continue
+
+            try:
+                alert_data = json.loads(msg.value().decode('utf-8'))
+            except Exception as e:
+                logger.error(f"Failed to parse message value as JSON: {e}")
+                continue
+
             if not AlertValidator.validate(alert_data):
                 logger.warning(f"Validation failed for alert: {alert_data}")
                 continue
-            alert_id = alert_data["alert_id"]
+
+            alert_id = alert_data.get("alert_id", alert_data.get("id"))
+
             if redis_checker.is_duplicate(alert_id):
                 logger.info(f"Duplicate alert detected: {alert_id}. Skipping.")
                 continue
-            lon = alert_data["lon"]
-            lat = alert_data["lat"]
-            region = get_region_with_geopandas(lon, lat)
-            rabbit_publisher.publish(region, alert_data)
 
+            try:
+                lon = float(alert_data["lon"])
+                lat = float(alert_data["lat"])
+                region = get_region_with_geopandas(lon, lat)
+            except:
+                region = "OVERSEAS"
+
+            # elasticsearch_config.config_to_es()
+
+            rabbit_publisher.publish(f"{region}", alert_data)
 
     except KeyboardInterrupt:
         logger.info("Stopping classification service...")
@@ -109,5 +166,9 @@ def main():
         consumer.close()
         rabbit_publisher.close()
 
+
 if __name__ == "__main__":
     main()
+
+
+

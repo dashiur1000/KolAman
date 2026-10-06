@@ -14,9 +14,15 @@ docker run -d --name elasticsearch -p 9200:9200 -p 9300:9300 -e "discovery.type=
 docker run -d --name kibana -p 5601:5601 --link elasticsearch:elasticsearch -e "ELASTICSEARCH_HOSTS=http://elasticsearch:9200" kibana:8.11.3
 ```
 ```
+docker run -d --name rabbitmq -p 5672:5672 -p 15672:15672 rabbitmq:3-management
+```
+```
+docker run -d --name redis-db -p 6379:6379 redis
+```
+```
 docker ps
 ```
-וודא שקפקא עלה
+וודא שכל הקונטנטיינרים עלו עלה
 
 כנס לתיקיית alert-simulator
 
@@ -30,6 +36,10 @@ dotnet run
 לצפייה בלוגים באלסטיק דרך קיבאנה
 ```
 http://localhost:5601/app/dev_tools#/console
+```
+לצפייה בראביט:
+```
+http://localhost:15672/#/
 ```
 
 ## פירוט המערכת

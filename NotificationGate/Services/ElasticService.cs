@@ -6,7 +6,7 @@ namespace NotificationGate.Services
     public class ElasticService : IElasticService
     {
         private readonly ElasticsearchClient _client;
-        private const string IndexName = "exam-logs";
+        private const string IndexName = "notification-gate-logs";
 
         public ElasticService()
         {

@@ -13,7 +13,9 @@ namespace NotificationGate
 
             IElasticService elasticService = new ElasticService();
 
-            string alertsPath = @"C:\Users\dzs10\Desktop\IDF\KolAman\NotificationGate\alert-simulator\alerts\";
+            //string alertsPath = @"C:\Users\dzs10\Desktop\IDF\KolAman\NotificationGate\alert-simulator\alerts\";
+            string alertsPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, @"..\..\..\alert-simulator\alerts\"));
+
 
             string logLevel1 = "Info";
             string logMessage1 = alertsPath;

@@ -100,10 +100,9 @@ class AlertValidator:
             return False
         if not alert_data.get("content") or not alert_data.get("title"):
             return False
-        # if alert_data["lon"] != float or alert_data["lat"] != float:
-        #     print(f"{alert_data["lon"]}")
-        #     return False
-        if "alert_id" not in alert_data and "id" not in alert_data:
+        if "alert_id" not in alert_data:
+            return False
+        if alert_data["lon"] <= 0 or alert_data["lat"] <= 0:
             return False
         return True
 
@@ -149,12 +148,9 @@ def main():
                 logger.info(f"Duplicate alert detected: {alert_id}. Skipping.")
                 continue
 
-            try:
-                lon = float(alert_data["lon"])
-                lat = float(alert_data["lat"])
-                region = get_region_with_geopandas(lon, lat)
-            except:
-                region = "OVERSEAS"
+            lon = float(alert_data["lon"])
+            lat = float(alert_data["lat"])
+            region = get_region_with_geopandas(lon, lat)
 
             # elasticsearch_config.config_to_es()
 
